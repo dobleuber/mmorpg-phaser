@@ -1,4 +1,9 @@
 import PlayerModel from './PlayerModel';
+import Spawner from './Spawner';
+import {
+    SpawnerType,
+} from './utils';
+import * as levelData from '../public/assets/level/large_level.json';
 
 export default class GameManager {
     constructor(io) {
@@ -8,7 +13,7 @@ export default class GameManager {
         this.monsters = {};
         this.players = {};
 
-        this.playerLocations = [[50,50], [100, 100]];
+        this.playerLocations = [];
         this.chestLocations = {};
         this.monsterLocations = {};
     }
@@ -19,7 +24,36 @@ export default class GameManager {
         this.setupSpawners();
     }
 
-    parseMapData() {}
+    parseMapData() {
+        this.levelData = levelData;
+        this.levelData.layers.forEach(layer => {
+            if (layer.name === 'player_locations') {
+                layer.objects.forEach(object => {
+                    this.playerLocations.push([object.x, object.y]);
+                })
+            } else if (layer.name === 'chest_locations') {
+                layer.objects.forEach(object => {
+                    const {
+                        spawner
+                    } = object.properties;
+                    if (!this.chestLocations[spawner]) {
+                        this.chestLocations[spawner] = [];
+                    }
+                    this.chestLocations[spawner].push([object.x, object.y]);
+                })
+            } else if (layer.name === 'monster_locations') {
+                layer.objects.forEach(object => {
+                    const {
+                        spawner
+                    } = object.properties;
+                    if (!this.monsterLocations[spawner]) {
+                        this.monsterLocations[spawner] = [];
+                    }
+                    this.monsterLocations[spawner].push([object.x, object.y]);
+                })
+            }
+        })
+    }
 
     setupEventListener() {
         this.io.on('connection', socket => {
@@ -35,7 +69,7 @@ export default class GameManager {
             socket.on('newPlayer', (data) => {
                 // create a new player
                 this.spawnPlayer(socket.id);
-                
+
                 // send the players data to the new player
                 socket.emit('currentPlayers', this.players);
 
@@ -56,11 +90,29 @@ export default class GameManager {
                     player.x = playerData.x;
                     player.y = playerData.y;
                     player.flipX = playerData.flipX;
+                    player.playerAttacking = playerData.playerAttacking;
+                    player.currentDirection = playerData.currentDirection;
 
                     // emit to all players that the player has moved
                     this.io.emit('playerMoved', player);
                 }
-            })
+            });
+
+            socket.on('pickUpChest', chestId => {
+                // update the spawner
+                if (this.chests[chestId]) {
+                    const {
+                        gold
+                    } = this.chests[chestId];
+
+                    // updating the players gold
+                    this.players[socket.id].updateGold(gold);
+                    socket.emit('updateScore', this.players[socket.id].gold);
+
+                    // removing the chest
+                    this.spawners[this.chests[chestId].spawnerId].removeObject(chestId);
+                }
+            });
 
             // player connected to the game
             console.log('a player connected');
@@ -69,10 +121,70 @@ export default class GameManager {
         })
     }
 
-    setupSpawners() {}
+    setupSpawners() {
+        const config = {
+            spawnInterval: 3000,
+            limit: 3,
+            spawnerType: SpawnerType.CHEST,
+            id: '',
+        };
+        let spawner;
+
+        // create chest spawners
+        Object.keys(this.chestLocations).forEach((key) => {
+            config.id = `chest-${key}`;
+
+            spawner = new Spawner(
+                config,
+                this.chestLocations[key],
+                this.addChest.bind(this),
+                this.deleteChest.bind(this),
+            );
+            this.spawners[spawner.id] = spawner;
+        });
+
+        // create monster spawners
+        Object.keys(this.monsterLocations).forEach((key) => {
+            config.id = `monster-${key}`;
+            config.spawnerType = SpawnerType.MONSTER;
+
+            spawner = new Spawner(
+                config,
+                this.monsterLocations[key],
+                this.addMonster.bind(this),
+                this.deleteMonster.bind(this),
+                this.moveMonsters.bind(this),
+            );
+            this.spawners[spawner.id] = spawner;
+        });
+    }
 
     spawnPlayer(playerId) {
         const player = new PlayerModel(playerId, this.playerLocations);
         this.players[playerId] = player;
+    }
+
+    addChest(chestId, chest) {
+        this.chests[chestId] = chest;
+        this.io.emit('chestSpawned', chest);
+    }
+
+    deleteChest(chestId) {
+        delete this.chests[chestId];
+        this.io.emit('chestRemoved', chestId);
+    }
+
+    addMonster(monsterId, monster) {
+        this.monsters[monsterId] = monster;
+        this.io.emit('monsterSpawned', monster);
+    }
+
+    deleteMonster(monsterId) {
+        delete this.monsters[monsterId];
+        this.io.emit('monsterRemoved', monsterId);
+    }
+
+    moveMonsters() {
+        this.io.emit('monsterMovement', this.monsters);
     }
 }

@@ -74,37 +74,40 @@ export default class PlayerContainer extends Phaser.GameObjects.Container {
   update(cursors) {
     this.body.setVelocity(0);
 
-    if (cursors.left.isDown) {
-      this.body.setVelocityX(-this.velocity);
-      this.currentDirection = Direction.LEFT;
-      this.weapon.setPosition(-40, 0);
-      this.player.flipX = false;
-    } else if (cursors.right.isDown) {
-      this.body.setVelocityX(this.velocity);
-      this.currentDirection = Direction.RIGHT;
-      this.weapon.setPosition(40, 0);
-      this.player.flipX = true;
+    if (this.mainPlayer) {
+      if (cursors.left.isDown) {
+        this.body.setVelocityX(-this.velocity);
+        this.currentDirection = Direction.LEFT;
+        this.player.flipX = false;
+        this.flipX = false;
+      } else if (cursors.right.isDown) {
+        this.body.setVelocityX(this.velocity);
+        this.currentDirection = Direction.RIGHT;
+        this.player.flipX = true;
+        this.flipX = true;
+      }
+
+      if (cursors.up.isDown) {
+        this.body.setVelocityY(-this.velocity);
+        this.currentDirection = Direction.UP;
+      } else if (cursors.down.isDown) {
+        this.body.setVelocityY(this.velocity);
+        this.currentDirection = Direction.DOWN;
+      }
+
+      if (Phaser.Input.Keyboard.JustDown(cursors.space) && !this.playerAttacking) {
+        this.attack()
+      }
     }
 
-    if (cursors.up.isDown) {
-      this.body.setVelocityY(-this.velocity);
-      this.currentDirection = Direction.UP;
-      this.weapon.setPosition(0, -40);
-    } else if (cursors.down.isDown) {
-      this.body.setVelocityY(this.velocity);
-      this.currentDirection = Direction.DOWN;
+    if (this.currentDirection === Direction.DOWN) {
       this.weapon.setPosition(0, 40);
-    }
-
-    if (Phaser.Input.Keyboard.JustDown(cursors.space) && !this.playerAttacking) {
-      this.weapon.alpha = 1;
-      this.playerAttacking = true;
-      this.attackAudio.play();
-      this.scene.time.delayedCall(150, () => {
-        this.weapon.alpha = 0;
-        this.playerAttacking = false;
-        this.swordHit = false;
-      }, [], this);
+    } else if (this.currentDirection === Direction.UP) {
+      this.weapon.setPosition(0, -40);
+    } else if (this.currentDirection === Direction.LEFT) {
+      this.weapon.setPosition(-40, 0);
+    } else if (this.currentDirection === Direction.RIGHT) {
+      this.weapon.setPosition(40, 0);
     }
 
     if (this.playerAttacking) {
@@ -133,5 +136,19 @@ export default class PlayerContainer extends Phaser.GameObjects.Container {
 
   updateFlipX() {
     this.player.flipX = this.flipX
+  }
+
+  attack() {
+    this.weapon.alpha = 1;
+    this.playerAttacking = true;
+    if (this.mainPlayer) {
+      this.attackAudio.play();
+    }
+
+    this.scene.time.delayedCall(150, () => {
+      this.weapon.alpha = 0;
+      this.playerAttacking = false;
+      this.swordHit = false;
+    }, [], this);
   }
 }

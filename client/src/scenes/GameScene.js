@@ -42,23 +42,78 @@ export default class GameScene extends Phaser.Scene {
 
     // spawn monsters
     this.socket.on('currentMonsters', monsters => {
-      console.log('current monsters event', monsters);
+      Object.keys(monsters).forEach(monsterId => {
+        this.spawnMonster(monsters[monsterId]);
+      });
     });
 
     // spawn chests
     this.socket.on('currentChests', chests => {
-      console.log('current chests event', chests);
+      Object.keys(chests).forEach(chestId => {
+        this.spawnChest(chests[chestId]);
+      });
     });
 
     // listen for player movement
-    this.socket.on('playerMoved', player => {
-      const otherPlayer = this.otherPlayers.getChildren().find(p => p.id === player.id);
+    this.socket.on('playerMoved', ({
+      id,
+      x,
+      y,
+      flipX,
+      playerAttacking,
+      currentDirection,
+    }) => {
+      const otherPlayer = this.otherPlayers.getChildren().find(p => p.id === id);
       if (otherPlayer) {
-        otherPlayer.setPosition(player.x, player.y);
-        otherPlayer.flipX = player.flipX;
-        otherPlayer.updateHealthBar()
+        otherPlayer.setPosition(x, y);
+        otherPlayer.flipX = flipX;
+        otherPlayer.updateHealthBar();
         otherPlayer.updateFlipX();
+        otherPlayer.playerAttacking = playerAttacking;
+        otherPlayer.currentDirection = currentDirection;
+        if(playerAttacking) {
+          otherPlayer.attack();
+        }
       }
+    });
+
+    this.socket.on('chestSpawned', (chest) => {
+      this.spawnChest(chest);
+    });
+
+    this.socket.on('monsterSpawned', (monster) => {
+      this.spawnMonster(monster);
+    });
+
+    this.socket.on('chestRemoved', (chestId) => {
+      this.chests.getChildren().forEach((chest) => {
+        if (chest.id === chestId) {
+          chest.makeInactive();
+        }
+      });
+    });
+
+    this.socket.on('monsterRemoved', (monsterId) => {
+      this.monsters.getChildren().forEach((monster) => {
+        if (monster.id === monsterId) {
+          monster.makeInactive();
+          this.monsterDeathAudio.play();
+        }
+      });
+    });
+
+    this.socket.on('monsterMovement', (monsters) => {
+      this.monsters.getChildren().forEach((monster) => {
+        Object.keys(monsters).forEach((monsterId) => {
+          if (monster.id === monsterId) {
+            this.physics.moveToObject(monster, monsters[monsterId], 40);
+          }
+        });
+      });
+    });
+
+    this.socket.on('updateScore', gold => {
+      this.events.emit('updateScore', gold);
     })
   }
 
@@ -83,21 +138,32 @@ export default class GameScene extends Phaser.Scene {
       const {
         x,
         y,
-        flipX
+        flipX,
+        playerAttacking,
+        currentDirection
       } = this.player;
       if (this.player.oldPosition &&
-        (x !== this.player.oldPosition.x || y !== this.player.oldPosition.y || flipX !== this.player.oldPosition.flipX)) {
+        (x !== this.player.oldPosition.x ||
+          y !== this.player.oldPosition.y ||
+          flipX !== this.player.oldPosition.flipX ||
+          playerAttacking !== this.player.oldPosition.playerAttacking ||
+          currentDirection !== this.player.oldPosition.currentDirection
+        )) {
         this.socket.emit('playerMovement', {
           x,
           y,
-          flipX
+          flipX,
+          playerAttacking,
+          currentDirection
         });
       }
 
       this.player.oldPosition = {
         x,
         y,
-        flipX
+        flipX,
+        playerAttacking,
+        currentDirection
       }
     }
   }
@@ -155,6 +221,7 @@ export default class GameScene extends Phaser.Scene {
 
     // create other players group
     this.otherPlayers = this.physics.add.group();
+    this.otherPlayers.runChildUpdate = true;
   }
 
   spawnChest(chestObject) {
@@ -221,7 +288,7 @@ export default class GameScene extends Phaser.Scene {
   collectChest(player, chest) {
     // play gold pickup sound
     this.goldPickupAudio.play();
-    this.events.emit('pickUpChest', chest.id, player.id);
+    this.socket.emit('pickUpChest', chest.id);
   }
 
   createMap() {
@@ -235,46 +302,11 @@ export default class GameScene extends Phaser.Scene {
     //   this.addCollisions();
     // });
 
-    this.events.on('chestSpawned', (chest) => {
-      this.spawnChest(chest);
-    });
-
-    this.events.on('monsterSpawned', (monster) => {
-      this.spawnMonster(monster);
-    });
-
-    this.events.on('chestRemoved', (chestId) => {
-      this.chests.getChildren().forEach((chest) => {
-        if (chest.id === chestId) {
-          chest.makeInactive();
-        }
-      });
-    });
-
-    this.events.on('monsterRemoved', (monsterId) => {
-      this.monsters.getChildren().forEach((monster) => {
-        if (monster.id === monsterId) {
-          monster.makeInactive();
-          this.monsterDeathAudio.play();
-        }
-      });
-    });
-
     this.events.on('updateMonsterHealth', (monsterId, health) => {
       this.monsters.getChildren().forEach((monster) => {
         if (monster.id === monsterId) {
           monster.updateHealth(health);
         }
-      });
-    });
-
-    this.events.on('monsterMovement', (monsters) => {
-      this.monsters.getChildren().forEach((monster) => {
-        Object.keys(monsters).forEach((monsterId) => {
-          if (monster.id === monsterId) {
-            this.physics.moveToObject(monster, monsters[monsterId], 40);
-          }
-        });
       });
     });
 

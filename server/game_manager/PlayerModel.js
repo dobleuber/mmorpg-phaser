@@ -5,6 +5,7 @@ export default class PlayerModel {
     this.gold = 0;
     this.id = playerId;
     this.flipX = true;
+    this.playerAttacking = false;
     this.spawnLocations = spawnLocations;
 
     const location = this.spawnLocations[Math.floor(Math.random() * this.spawnLocations.length)];
