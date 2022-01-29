@@ -151,4 +151,11 @@ export default class PlayerContainer extends Phaser.GameObjects.Container {
       this.swordHit = false;
     }, [], this);
   }
+
+  cleanup() {
+    this.healthBar.destroy();
+    this.player.destroy();
+    this.weapon.destroy();
+    this.destroy();
+  }
 }

@@ -1,6 +1,5 @@
 import * as Phaser from 'phaser';
 import PlayerContainer from '../classes/player/PlayerContainer';
-import GameManager from '../game_manager/GameManager';
 import Chest from '../classes/Chest';
 import Monster from '../classes/Monster';
 import GameMap from '../classes/GameMap';
@@ -71,7 +70,7 @@ export default class GameScene extends Phaser.Scene {
         otherPlayer.updateFlipX();
         otherPlayer.playerAttacking = playerAttacking;
         otherPlayer.currentDirection = currentDirection;
-        if(playerAttacking) {
+        if (playerAttacking) {
           otherPlayer.attack();
         }
       }
@@ -114,6 +113,53 @@ export default class GameScene extends Phaser.Scene {
 
     this.socket.on('updateScore', gold => {
       this.events.emit('updateScore', gold);
+    });
+
+    this.socket.on('updateMonsterHealth', (monsterId, health) => {
+      this.monsters.getChildren().forEach((monster) => {
+        if (monster.id === monsterId) {
+          monster.updateHealth(health);
+        }
+      });
+    });
+
+    this.socket.on('updatePlayerHealth', (playerId, health) => {
+      if (this.player.id === playerId) {
+        if (health < this.player.health) {
+          this.playerDamageAudio.play();
+        }
+
+        this.player.updateHealth(health);
+      } else {
+        this.otherPlayers.getChildren().forEach(player => {
+          if (playerId === player.id) {
+            player.updateHealth(health);
+          }
+        })
+      }
+    });
+
+    this.socket.on('respawnPlayer', (playerObject) => {
+      if (this.player.id === playerObject.id) {
+        this.playerDeathAudio.play();
+        this.player.respawn(playerObject);
+      } else {
+        this.otherPlayers.getChildren().forEach(player => {
+          if (playerObject.id === player.id) {
+            playerDeathAudio.play();
+            player.respawn(playerObject);
+          }
+        })
+      }
+    });
+
+    this.socket.on('disconnected', playerId => {
+      this.otherPlayers.getChildren().forEach(player => {
+        if (player.id === playerId) {
+          player.cleanup();
+        }
+      });
+
     })
   }
 
@@ -276,12 +322,28 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.monsters, this.gameMap.blockedLayer);
     // check for overlaps between the player's weapon and monster game objects
     this.physics.add.overlap(this.player.weapon, this.monsters, this.enemyOverlap, null, this);
+    // check if the player collides other players
+    this.physics.add.collider(this.otherPlayers, this.player, this.pvpCollider, false, this);
+    // check for overlaps between the player's weapon and other players
+    this.physics.add.overlap(this.player.weapon, this.otherPlayers, this.weaponOverlapEnemy, false, this);
+  }
+
+  pvpCollider(player, otherPlayer) {
+    this.player.body.setVelocity(0);
+    otherPlayer.body.setVelocity(0);
+  }
+
+  weaponOverlapEnemy(weapon, otherPlayer) {
+    if (this.player.playerAttacking && !this.player.swordHit) {
+      this.player.swordHit = true;
+      this.socket.emit('attackedPlayer', otherPlayer.id);
+    }
   }
 
   enemyOverlap(weapon, enemy) {
     if (this.player.playerAttacking && !this.player.swordHit) {
       this.player.swordHit = true;
-      this.events.emit('monsterAttacked', enemy.id, this.player.id);
+      this.socket.emit('monsterAttacked', enemy.id);
     }
   }
 
@@ -294,35 +356,5 @@ export default class GameScene extends Phaser.Scene {
   createMap() {
     // create map
     this.gameMap = new GameMap(this, 'map', 'background', 'background', 'blocked');
-  }
-
-  createGameManager() {
-    // this.events.on('spawnPlayer', (playerObject) => {
-    //   this.createPlayer(playerObject);
-    //   this.addCollisions();
-    // });
-
-    this.events.on('updateMonsterHealth', (monsterId, health) => {
-      this.monsters.getChildren().forEach((monster) => {
-        if (monster.id === monsterId) {
-          monster.updateHealth(health);
-        }
-      });
-    });
-
-    this.events.on('updatePlayerHealth', (playerId, health) => {
-      if (health < this.player.health) {
-        this.playerDamageAudio.play();
-      }
-      this.player.updateHealth(health);
-    });
-
-    this.events.on('respawnPlayer', (playerObject) => {
-      this.playerDeathAudio.play();
-      this.player.respawn(playerObject);
-    });
-
-    this.gameManager = new GameManager(this, this.gameMap.tilemap.objects);
-    this.gameManager.setup();
   }
 }
